@@ -13,7 +13,8 @@ import BN from "bn.js"
 
 import { Data, findProgramAddress, prepPayForFilesTxn } from "./state";
 import { connection } from "../index";
-import { program_ids, RESERVED_TXN_MANIFEST } from "./constant";
+import { DEFAULT_TIMEOUT, program_ids, RESERVED_TXN_MANIFEST } from "./constant";
+import { sleep } from "@solana/web3.js/src/util/sleep";
 
 export const extendBorsh = () => {
   BinaryReader.prototype.readPubkey = function () {
@@ -275,6 +276,91 @@ const sendTransactionWithRetry = async (wallet, instructions, signers, commitmen
   return { txid, slot }
 }
 
-const awaitTransactionSignatureConfirmation = () => {
+const awaitTransactionSignatureConfirmation = async (
+  txid, timeout, connection,
+  commitment = "recent",
+  queryStatus = false) => {
+  let done = false
+  let status = {
+    slot: 0,
+    confirmations: 0,
+    err: null
+  }
+  let subId = 0
+  status = await new Promise(async (resolve, reject) => {
+    setTimeout(() => {
+      if(done) {
+        return
+      }
+      done = true
+      console.log("rejecting due to timeout")
+      reject({timeout: true}, timeout)
+    })
+    try {
+      subId = connection.onSignature(txid, (result, context) => {
+        done = true
+        status = {
+          err: result.err,
+          slot: context.slot,
+          confirmations: 0
+        }
+        if(result.err) {
+          console.log(result.err)
+          reject(status)
+        }
+        else {
+          console.log(result)
+          resolve(status)
+        }
+      }, commitment)
+    }
+    catch (e) {
+      done = true
+      console.error("error in awaitTransactionSignatureConfirmation", txid, e)
+    }
+    while(!done && queryStatus) {
+      (async () => {
+        try {
+          const signatureStatuses = await connection.getSignatureStatuses([txid])
+          status = signatureStatuses && signatureStatuses.value[0]
+          if(!done) {
+            console.log("while(!done && queryStatus)")
+            if(!status) {
+              console.log("null result for", txid, status)
+            }
+            else if(status.err) {
+              console.log("error for", txid, status)
+              done = true
+              reject(status.err)
+            }
+            else if(!status.confirmations) {
+              console.log("no confirmations for ", txid, status)
+            }
+            else {
+              console.log("confirmation for ", txid, status)
+              done = true
+              resolve(status)
+            }
+          }
+        }
+        catch (e) {
+          if(!done) {
+            console.log("connection error: txid", txid, e)
+          }
+        }
+      })()
+      await sleep(1000)
+    }
+  })
+  if(connection._signatureSubscriptions[subId]) {
+    connection.removeSignatureListener(subId)
+  }
+  done = true
+  console.log("returning status", status)
+  return status
+}
 
+const sendSignedTransaction = async (signedTransaction, timeout = DEFAULT_TIMEOUT) => {
+  const rawTransaction = signedTransaction.serialize()
+  const startTime = getUnixTs()
 }
