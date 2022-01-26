@@ -270,14 +270,17 @@ const sendTransactionWithRetry = async (wallet, instructions, signers, commitmen
     beforeSend()
   }
   const { txid, slot } = await sendSignedTransaction({
-    connection,
     signedTransaction: transaction
   })
   return { txid, slot }
 }
 
+const getUnixTs = () => {
+  return new Date().getTime() / 1000
+}
+
 const awaitTransactionSignatureConfirmation = async (
-  txid, timeout, connection,
+  txid, timeout,
   commitment = "recent",
   queryStatus = false) => {
   let done = false
@@ -287,17 +290,18 @@ const awaitTransactionSignatureConfirmation = async (
     err: null
   }
   let subId = 0
-  status = await new Promise(async (resolve, reject) => {
-    setTimeout(() => {
+  status = await new Promise(async (successed, failed) => {
+    const timeout_handler = () => {
       if(done) {
         return
       }
       done = true
-      console.log("rejecting due to timeout")
-      reject({timeout: true}, timeout)
-    })
+      console.log("due to timeout, rejecting")
+      failed({timeout: true})
+    }
+    setTimeout(timeout_handler, timeout)
     try {
-      subId = connection.onSignature(txid, (result, context) => {
+      const signature_callback = (result, context) => {
         done = true
         status = {
           err: result.err,
@@ -305,18 +309,20 @@ const awaitTransactionSignatureConfirmation = async (
           confirmations: 0
         }
         if(result.err) {
-          console.log(result.err)
-          reject(status)
+          console.log("rejecting", result.err)
+          failed(status)
         }
         else {
-          console.log(result)
-          resolve(status)
+          console.log("successed", result)
+          successed(status)
         }
-      }, commitment)
+      }
+      subId = connection.onSignature(txid, signature_callback, commitment)
     }
     catch (e) {
       done = true
-      console.error("error in awaitTransactionSignatureConfirmation", txid, e)
+      console.error(
+        "error in awaitTransactionSignatureConfirmation connection.onSignature", txid, e)
     }
     while(!done && queryStatus) {
       (async () => {
@@ -324,28 +330,28 @@ const awaitTransactionSignatureConfirmation = async (
           const signatureStatuses = await connection.getSignatureStatuses([txid])
           status = signatureStatuses && signatureStatuses.value[0]
           if(!done) {
-            console.log("while(!done && queryStatus)")
+            console.log("handling at while(!done && queryStatus)")
             if(!status) {
-              console.log("null result for", txid, status)
+              console.log("null result in", txid, status)
             }
             else if(status.err) {
-              console.log("error for", txid, status)
+              console.log("error in", txid, status)
               done = true
-              reject(status.err)
+              failed(status.err)
             }
             else if(!status.confirmations) {
-              console.log("no confirmations for ", txid, status)
+              console.log("no confirmations in ", txid, status)
             }
             else {
               console.log("confirmation for ", txid, status)
               done = true
-              resolve(status)
+              successed(status)
             }
           }
         }
         catch (e) {
           if(!done) {
-            console.log("connection error: txid", txid, e)
+            console.log("connection error: ", txid, e)
           }
         }
       })()
@@ -360,7 +366,39 @@ const awaitTransactionSignatureConfirmation = async (
   return status
 }
 
-const sendSignedTransaction = async (signedTransaction, timeout = DEFAULT_TIMEOUT) => {
+const sendSignedTransaction = async ({signedTransaction, timeout = DEFAULT_TIMEOUT}) => {
   const rawTransaction = signedTransaction.serialize()
   const startTime = getUnixTs()
+  let slot = 0
+  const txid = await connection.sendRawTransaction(rawTransaction, { skipPreflight: true })
+  console.log("started awaiting confirmation", txid)
+  let done = false;
+  (async() => {
+    while(!done && getUnixTs() - startTime < timeout) {
+      connection.sendRawTransaction(rawTransaction, { skipPreflight: true })
+      await sleep(500)
+    }
+  })()
+  try {
+    const confirmation = await awaitTransactionSignatureConfirmation(txid, timeout, "recent", true)
+    if(!confirmation) {
+      throw new Error("Timed out awaiting conrimation on transaction")
+    }
+    if(confirmation.err) {
+      console.err(confirmation.err)
+      throw new Error("Transaction failed: custom instruction error")
+    }
+    slot = confirmation?.slot || 0
+  }
+  catch (e) {
+
+  }
+  finally {
+    done = true
+  }
+  console.log("latency", txid, getUnixTs() - startTime)
+  return {
+    txid,
+    slot
+  }
 }
