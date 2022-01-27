@@ -11,7 +11,14 @@ import { BinaryReader, BinaryWriter } from "borsh";
 import base58 from "bs58"
 import BN from "bn.js"
 
-import { createMetadata, Data, findProgramAddress, prepPayForFilesTxn, updateMetadata } from "./state";
+import {
+  createMasterEdition,
+  createMetadata,
+  Data,
+  findProgramAddress,
+  prepPayForFilesTxn,
+  updateMetadata
+} from "./state";
 import { connection } from "../index";
 import { DEFAULT_TIMEOUT, program_ids, RESERVED_TXN_MANIFEST } from "./constant";
 import { sleep } from "@solana/web3.js/src/util/sleep";

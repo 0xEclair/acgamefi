@@ -2,6 +2,8 @@ import { AR_SOL_HOLDER_ID, EDITION, METADATA_PREFIX, MetadataKey, program_ids } 
 import { PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY, TransactionInstruction } from "@solana/web3.js";
 import * as crypto from "crypto";
 import { serialize } from "borsh";
+import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { transferCustomToken } from "../transfer_token";
 
 class CreateMetadataArgs {
   instruction = 0
@@ -367,4 +369,50 @@ export const updateMetadata = async (data, newUpdateAuthority, primarySaleHappen
     })
   )
   return metadataAccount
+}
+
+export const createMasterEdition = async (maxSupply, mintKey, updateAuthorityKey, mintAuthorityKey, payer, instructions) => {
+  const metadataProgramId = program_ids.metadata
+  const metadataAccount = (
+    await findProgramAddress(
+      [
+        Buffer.from(METADATA_PREFIX),
+        new PublicKey(metadataProgramId).toBuffer(),
+        new PublicKey(mintKey).toBuffer()
+      ],
+      new PublicKey(metadataProgramId)
+    )
+  )[0]
+  const editionAccoount = (
+    await findProgramAddress(
+      [
+        Buffer.from(METADATA_PREFIX),
+        new PublicKey(metadataProgramId).toBuffer(),
+        new PublicKey(mintKey).toBuffer(),
+        Buffer.from(EDITION)
+      ],
+      new PublicKey(metadataProgramId)
+    )
+  )[0]
+  const pk = (str) => new PublicKey(str)
+  const value = new CreateMasterEditionArgs({
+    maxSupply: maxSupply || null
+  })
+  const data = Buffer.from(serialize(METADATA_SCHEMA, value))
+  const keys = [
+    { pubkey: new PublicKey(editionAccoount), isSigner: false, isWritable: true },
+    { pubkey: new PublicKey(mintKey), isSigner: false, isWritable: true },
+    { pubkey: new PublicKey(updateAuthorityKey), isSigner: true, isWritable: false },
+    { pubkey: new PublicKey(mintAuthorityKey), isSigner: true, isWritable: false },
+    { pubkey: pk(payer), isSigner: true, isWritable: false },
+    { pubkey: pk(metadataAccount), isSigner: false, isWritable: false },
+    { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    { pubkey: SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false }
+  ]
+  instructions.push(new TransactionInstruction({
+    keys,
+    programId: pk(metadataProgramId),
+    data
+  }))
 }
