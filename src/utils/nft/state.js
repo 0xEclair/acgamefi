@@ -1,6 +1,7 @@
-import { AR_SOL_HOLDER_ID, EDITION, METADATA_PREFIX, MetadataKey, program_ids } from "./index";
-import { PublicKey, SystemProgram, TransactionInstruction } from "@solana/web3.js";
+import { AR_SOL_HOLDER_ID, EDITION, METADATA_PREFIX, MetadataKey, program_ids } from "./constant";
+import { PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY, TransactionInstruction } from "@solana/web3.js";
 import * as crypto from "crypto";
+import { serialize } from "borsh";
 
 class CreateMetadataArgs {
   instruction = 0
@@ -121,6 +122,7 @@ export const data_url_to_file = (dataurl, filename) => {
   return new File([u8arr], filename, {type: mime})
 }
 
+// Only create a program derived account
 export const findProgramAddress = async (seeds, programId) => {
   const result = await PublicKey.findProgramAddress(seeds, programId)
   return [result[0].toBase58(), result[1]]
@@ -139,7 +141,7 @@ const getEdition = async (mint) => {
   return program_address[0]
 }
 
-const prepPayForFilesTxn = async (wallet, files, metadata) => {
+export const prepPayForFilesTxn = async (wallet, files, metadata) => {
   const memo = program_ids.memo
   const instructions = []
   const signers = []
@@ -168,4 +170,201 @@ const prepPayForFilesTxn = async (wallet, files, metadata) => {
     instructions,
     signers
   }
+}
+
+const METADATA_SCHEMA = new Map([
+  [
+    CreateMetadataArgs,
+    {
+      kind: "struct",
+      fields: [
+        ["instruction", "u8"],
+        ["data", Data],
+        ["isMutable", "u8"], // bool
+      ],
+    },
+  ],
+  [
+    UpdateMetadataArgs,
+    {
+      kind: "struct",
+      fields: [
+        ["instruction", "u8"],
+        ["data", { kind: "option", type: Data }],
+        ["updateAuthority", { kind: "option", type: "pubkeyAsString" }],
+        ["primarySaleHappened", { kind: "option", type: "u8" }],
+      ],
+    },
+  ],
+  [
+    CreateMasterEditionArgs,
+    {
+      kind: "struct",
+      fields: [
+        ["instruction", "u8"],
+        ["maxSupply", { kind: "option", type: "u64" }],
+      ],
+    },
+  ],
+  [
+    MintPrintingTokensArgs,
+    {
+      kind: "struct",
+      fields: [
+        ["instruction", "u8"],
+        ["supply", "u64"],
+      ],
+    },
+  ],
+  [
+    MasterEditionV1,
+    {
+      kind: "struct",
+      fields: [
+        ["key", "u8"],
+        ["supply", "u64"],
+        ["maxSupply", { kind: "option", type: "u64" }],
+        ["printingMint", "pubkeyAsString"],
+        ["oneTimePrintingAuthorizationMint", "pubkeyAsString"],
+      ],
+    },
+  ],
+  [
+    MasterEditionV2,
+    {
+      kind: "struct",
+      fields: [
+        ["key", "u8"],
+        ["supply", "u64"],
+        ["maxSupply", { kind: "option", type: "u64" }],
+      ],
+    },
+  ],
+  [
+    Edition,
+    {
+      kind: "struct",
+      fields: [
+        ["key", "u8"],
+        ["parent", "pubkeyAsString"],
+        ["edition", "u64"],
+      ],
+    },
+  ],
+  [
+    Data,
+    {
+      kind: "struct",
+      fields: [
+        ["name", "string"],
+        ["symbol", "string"],
+        ["uri", "string"],
+        ["sellerFeeBasisPoints", "u16"],
+        ["creators", { kind: "option", type: [Creator] }],
+      ],
+    },
+  ],
+  [
+    Creator,
+    {
+      kind: "struct",
+      fields: [
+        ["address", "pubkeyAsString"],
+        ["verified", "u8"],
+        ["share", "u8"],
+      ],
+    },
+  ],
+  [
+    Metadata,
+    {
+      kind: "struct",
+      fields: [
+        ["key", "u8"],
+        ["updateAuthority", "pubkeyAsString"],
+        ["mint", "pubkeyAsString"],
+        ["data", Data],
+        ["primarySaleHappened", "u8"], // bool
+        ["isMutable", "u8"], // bool
+      ],
+    },
+  ],
+  [
+    EditionMarker,
+    {
+      kind: "struct",
+      fields: [
+        ["key", "u8"],
+        ["ledger", [31]],
+      ],
+    },
+  ],
+]);
+
+export const createMetadata = async (data, updateAuthority, mintKey, mintAuthority, instructions, payer) => {
+  const metadataProgramId = program_ids.metadata
+  const metadataAccount = (
+    await findProgramAddress(
+      [
+        Buffer.from("metadata"),
+        new PublicKey(metadataProgramId).toBuffer(),
+        new PublicKey(mintKey).toBuffer()
+      ],
+      new PublicKey(metadataProgramId)
+    )
+  )[0]
+  const value = new CreateMetadataArgs({
+    data,
+    isMutable: true
+  })
+  let txnData = Buffer.from(serialize(METADATA_SCHEMA, value))
+  const keys = [
+    { pubkey: new PublicKey(metadataAccount), isSigner: false, isWritable: true },
+    { pubkey: new PublicKey(mintKey), isSigner: false, isWritable: false },
+    { pubkey: new PublicKey(mintAuthority), isSigner: true, isWritable: false },
+    { pubkey: new PublicKey(payer), isSigner: true, isWritable: false },
+    { pubkey: new PublicKey(updateAuthority), isSigner: false, isWritable: false },
+    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    { pubkey: SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false }
+  ]
+  instructions.push(new TransactionInstruction({
+    keys,
+    programId: new PublicKey(metadataProgramId),
+    data: txnData
+  }))
+  return metadataAccount
+}
+
+export const updateMetadata = async (data, newUpdateAuthority, primarySaleHappened, mintKey, updateAuthority, instructions, metadataAccount) => {
+  const metadataProgramId = program_ids.metadata
+  metadataAccount = metadataAccount || (
+    await findProgramAddress(
+      [
+        Buffer.from("metadata"),
+        new PublicKey(metadataProgramId).toBuffer(),
+        new PublicKey(mintKey).toBuffer()
+      ],
+      new PublicKey(metadataProgramId)
+    )
+  )[0]
+  const value = new UpdateMetadataArgs({
+    data,
+    updateAuthority: !newUpdateAuthority? undefined: newUpdateAuthority,
+    primarySaleHappened: primarySaleHappened === null || primarySaleHappened === undefined?
+      null:
+      primarySaleHappened
+  })
+  const txn_data = Buffer.from(serialize(METADATA_SCHEMA, value))
+  const keys = [
+    { pubkey: new PublicKey(metadataAccount), isSigner: false, isWritable: true },
+    { pubkey: new PublicKey(updateAuthority), isSigner: true, isWritable: FALSE }
+  ]
+  instructions.push(
+    new TransactionInstruction({
+      keys,
+      programId: new PublicKey(metadataProgramId),
+      data: txn_data
+    })
+  )
+  return metadataAccount
 }
