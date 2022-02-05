@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { clusterApiUrl, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
-import { Creator, data_url_to_file } from "./utils/nft/state";
 import domToImage from "dom-to-image";
-import { mintNFT } from "./utils/nft";
 import { checkWallet } from "./utils";
+import { mintNFT } from "./utils/nft";
+import { Creator, data_url_to_file } from "./utils/nft/state";
 
 const NETWORK = clusterApiUrl("devnet");
 let lamportsRequiredToPlay = 0.1 * LAMPORTS_PER_SOL;
@@ -19,7 +19,6 @@ const generateNFT = async () => {
   }
   const provider = window.solana
   const img = await convertDOMtoBase64()
-  console.log(provider)
   const template_image = data_url_to_file(img, "GameTemplate.png")
 
   const self_creator = new Creator({
@@ -28,7 +27,7 @@ const generateNFT = async () => {
     share: 100
   })
   const md = {
-    name: `TEST_NFT`,
+    name: `1`,
     symbol: "MNFT",
     creators: [self_creator],
     description: "hello nft",

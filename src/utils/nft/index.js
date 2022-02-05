@@ -77,20 +77,20 @@ const createMintAccount = (instructions, payer, amount, signers) => {
 const createMint =
   (instructions, payer, mintRentExempt,
    decimals, owner, freezeAuthority, signers) => {
-  const account = createMintAccount(
-    instructions, payer, mintRentExempt, signers
-  )
-  instructions.push(
-    Token.createInitMintInstruction(
-      TOKEN_PROGRAM_ID,
-      account,
-      decimals,
-      owner,
-      freezeAuthority
+    const account = createMintAccount(
+      instructions, payer, mintRentExempt, signers
     )
-  )
-  return account
-}
+    instructions.push(
+      Token.createInitMintInstruction(
+        TOKEN_PROGRAM_ID,
+        account,
+        decimals,
+        owner,
+        freezeAuthority
+      )
+    )
+    return account
+  }
 
 export const mintNFT = async (provider,env,files,metadata) => {
   const wallet = provider
@@ -151,6 +151,7 @@ export const mintNFT = async (provider,env,files,metadata) => {
   const class_data = new Data({
     symbol: metadata.symbol,
     name: metadata.name,
+    // explore metadata uri
     uri: " ".repeat(64),
     sellerFeeBasisPoints: metadata.sellerFeeBasisPoints,
     creators: metadata.creators
@@ -159,13 +160,16 @@ export const mintNFT = async (provider,env,files,metadata) => {
     class_data, payerPublicKey, mintKey, payerPublicKey, instructions, wallet.publicKey.toBase58()
   )
   const { txid } = await sendTransactionWithRetry(wallet, instructions, signers)
+
   try {
     // return
     await connection.confirmTransaction(txid, "max")
   }
-  catch {
+  catch (e){
     // ignore
+    console.log(e)
   }
+
   await connection.getParsedConfirmedTransaction(txid, "confirmed")
   const data = new FormData()
 
@@ -183,13 +187,14 @@ export const mintNFT = async (provider,env,files,metadata) => {
       {method: "POST", body: data}
     )
   ).json()
-
-  const metadata_file = result.message?.find((m) => m.filename === RESERVED_TXN_MANIFEST)
+  const metadata_file = result.messages?.find((m) => m.filename === RESERVED_TXN_MANIFEST)
   let arweave_link = ""
+  console.log("metadata_file:", metadata_file)
   if(metadata_file?.transactionId) {
     const update_instructions = []
     const update_signers = []
     arweave_link = `https://arweave.net/${metadata_file.transactionId}`
+    console.log("arweave link: ", arweave_link)
     await updateMetadata(
       new Data({
         name: metadata.name,
@@ -336,7 +341,6 @@ const awaitTransactionSignatureConfirmation = async (
           const signatureStatuses = await connection.getSignatureStatuses([txid])
           status = signatureStatuses && signatureStatuses.value[0]
           if(!done) {
-            console.log("handling at while(!done && queryStatus)")
             if(!status) {
               console.log("null result in", txid, status)
             }
