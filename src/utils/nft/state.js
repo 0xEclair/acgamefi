@@ -10,7 +10,6 @@ import { PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY, TransactionInstruction } 
 import * as crypto from "crypto";
 import { serialize } from "borsh";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import { transferCustomToken } from "../transfer_token";
 
 class CreateMetadataArgs {
   instruction = 0
@@ -232,7 +231,7 @@ export const prepPayForFilesTxn = async (wallet, files, metadata) => {
   }
   for(let i = 0; i<files.length; i++) {
     const hashSum = crypto.createHash("sha256")
-    hashSum.update(await files[i].test())
+    hashSum.update(await files[i].text())
     const hex = hashSum.digest("hex")
     instructions.push(
       new TransactionInstruction({

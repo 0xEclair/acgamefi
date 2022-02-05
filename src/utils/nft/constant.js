@@ -14,7 +14,7 @@ export const program_ids = {
   memo: MEMO_ID
 }
 
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
+export const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
 export const AR_SOL_HOLDER_ID =
   new PublicKey("HvwC9QSAzvGXhhVrgPmauVwFWcYZhne3hVot9EbHuFTm")

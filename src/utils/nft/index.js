@@ -20,8 +20,7 @@ import {
   updateMetadata
 } from "./state";
 import { connection } from "../index";
-import { DEFAULT_TIMEOUT, program_ids, RESERVED_TXN_MANIFEST } from "./constant";
-import { sleep } from "@solana/web3.js/src/util/sleep";
+import { DEFAULT_TIMEOUT, program_ids, RESERVED_TXN_MANIFEST, sleep } from "./constant";
 
 export const extendBorsh = () => {
   BinaryReader.prototype.readPubkey = function () {
