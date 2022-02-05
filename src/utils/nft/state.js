@@ -1,4 +1,11 @@
-import { AR_SOL_HOLDER_ID, EDITION, METADATA_PREFIX, MetadataKey, program_ids } from "./constant";
+import {
+  AR_SOL_HOLDER_ID,
+  EDITION,
+  EDITION_MARKER_BIT_SIZE,
+  METADATA_PREFIX,
+  MetadataKey,
+  program_ids
+} from "./constant";
 import { PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY, TransactionInstruction } from "@solana/web3.js";
 import * as crypto from "crypto";
 import { serialize } from "borsh";
@@ -109,6 +116,73 @@ class MintPrintingTokensArgs {
   supply
   constructor(args) {
     this.supply = args.supply
+  }
+}
+
+class MasterEditionV1 {
+  key;
+  supply;
+  maxSupply;
+  /// Can be used to mint tokens that give one-time permission to mint a single limited edition.
+  printingMint;
+  /// If you don't know how many printing tokens you are going to need, but you do know
+  /// you are going to need some amount in the future, you can use a token from this mint.
+  /// Coming back to token metadata with one of these tokens allows you to mint (one time)
+  /// any number of printing tokens you want. This is used for instance by Auction Manager
+  /// with participation NFTs, where we dont know how many people will bid and need participation
+  /// printing tokens to redeem, so we give it ONE of these tokens to use after the auction is over,
+  /// because when the auction begins we just dont know how many printing tokens we will need,
+  /// but at the end we will. At the end it then burns this token with token-metadata to
+  /// get the printing tokens it needs to give to bidders. Each bidder then redeems a printing token
+  /// to get their limited editions.
+  oneTimePrintingAuthorizationMint;
+
+  constructor(args) {
+    this.key = MetadataKey.MasterEditionV1;
+    this.supply = args.supply;
+    this.maxSupply = args.maxSupply;
+    this.printingMint = args.printingMint;
+    this.oneTimePrintingAuthorizationMint =
+      args.oneTimePrintingAuthorizationMint;
+  }
+}
+
+class MasterEditionV2 {
+  key;
+  supply;
+  maxSupply;
+
+  constructor(args) {
+    this.key = MetadataKey.MasterEditionV2;
+    this.supply = args.supply;
+    this.maxSupply = args.maxSupply;
+  }
+}
+
+class EditionMarker {
+  key;
+  ledger;
+
+  constructor(args) {
+    this.key = MetadataKey.EditionMarker;
+    this.ledger = args.ledger;
+  }
+
+  editionTaken(edition) {
+    const editionOffset = edition % EDITION_MARKER_BIT_SIZE;
+    const indexOffset = Math.floor(editionOffset / 8);
+
+    if (indexOffset > 30) {
+      throw Error('bad index for edition');
+    }
+
+    const positionInBitsetFromRight = 7 - (editionOffset % 8);
+
+    const mask = Math.pow(2, positionInBitsetFromRight);
+
+    const appliedMask = this.ledger[indexOffset] & mask;
+
+    return appliedMask != 0;
   }
 }
 
@@ -359,7 +433,7 @@ export const updateMetadata = async (data, newUpdateAuthority, primarySaleHappen
   const txn_data = Buffer.from(serialize(METADATA_SCHEMA, value))
   const keys = [
     { pubkey: new PublicKey(metadataAccount), isSigner: false, isWritable: true },
-    { pubkey: new PublicKey(updateAuthority), isSigner: true, isWritable: FALSE }
+    { pubkey: new PublicKey(updateAuthority), isSigner: true, isWritable: false }
   ]
   instructions.push(
     new TransactionInstruction({

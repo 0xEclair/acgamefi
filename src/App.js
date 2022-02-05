@@ -1,4 +1,11 @@
 import { useEffect, useState } from "react";
+import { clusterApiUrl, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
+
+const NETWORK = clusterApiUrl("devnet");
+let lamportsRequiredToPlay = 0.1 * LAMPORTS_PER_SOL;
+const gameWalletPublicKey = new PublicKey(
+  "62AtDMhgaW1YQZCxv7hGBE7HDTU67L71vs4VQrRVBq3p"
+);
 
 function App() {
   const [provider, setProvider] = useState()
